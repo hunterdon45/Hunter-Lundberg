@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fishing Frenzy Game</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Press Start 2P', cursive;
+            background-color: #0077cc; /* Water blue */
+            color: #fff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            overflow: hidden; /* Prevent scrollbars */
+        }
+
+    
+        #game-container {
+            background-color: rgba(0, 0, 0, 0.3); /* Darker overlay */
+            border-radius: 1rem;
+            padding: 1.5rem;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+            text-align: center;
+            max-width: 90%; /* Ensure container fits smaller screens */
+            width: 700px; /* Fixed width for larger screens */
+        }
+        #game-canvas {
+            background-color: #005fa3; /* Slightly darker water */
+            border: 5px solid #004477; /* Dark border */
+            border-radius: 0.5rem;
+            cursor: crosshair;
+            display: block; /* Needed for margin auto */
+            margin: 1rem auto; /* Center canvas */
+            max-width: 100%; /* Responsive canvas */
+            height: auto; /* Maintain aspect ratio */
+        }
+        /* Style buttons and select dropdown */
+        button, select {
+            font-family: 'Press Start 2P', cursive;
+            padding: 0.75rem 1.5rem;
+            margin: 0.5rem;
+            border-radius: 0.5rem;
+            border: none;
+            cursor: pointer;
+            transition: all 0.2s ease-in-out;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            text-transform: uppercase; /* Make text uppercase */
+            font-size: 0.8rem; /* Slightly smaller font for buttons */
+        }
+        button:hover, select:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.3);
+        }
+        #start-button {
+            background-color: #4CAF50; /* Green */
+            color: white;
+        }
+        #start-button:hover {
+            background-color: #45a049;
+        }
+        #level-select {
+            background-color: #ff9800; /* Orange */
+            color: white;
+            padding: 0.75rem; /* Match button padding */
+        }
+        /* Style the score and timer bar */
+        .info-bar {
+            font-size: 1.1rem; /* Adjusted font size */
+            margin-bottom: 1rem;
+            display: flex;
+            justify-content: space-around;
+            background-color: rgba(0, 0, 0, 0.4);
+            padding: 0.75rem; /* Increased padding */
+            border-radius: 0.5rem;
+        }
+        /* Style for game items (though drawn on canvas) */
+        .item {
+            position: absolute; /* Needed for JS positioning, but we draw on canvas */
+            font-size: 2rem; /* Size of emoji */
+            user-select: none; /* Prevent text selection */
+        }
+        /* Style for the message box overlay */
+        #message-box {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background-color: rgba(0, 0, 0, 0.85); /* Darker background */
+            padding: 2.5rem; /* More padding */
+            border-radius: 1rem;
+            display: none; /* Hidden initially */
+            z-index: 10;
+            font-size: 1.5rem; /* Larger font */
+            border: 3px solid #fff; /* White border */
+        }
+        #message-box button { /* Style button inside message box */
+             font-size: 1rem;
+        }
+    </style>
+</head>
+<body class="bg-blue-600 flex items-center justify-center min-h-screen">
+    <div id="game-container">
+        <h1 class="text-3xl mb-4">Fishing Frenzy!</h1>
+
+        <div id="info-bar" class="info-bar">
+            <span>Score: <span id="score">0</span></span>
+            <span>Time: <span id="timer">30</span>s</span>
+        </div>
+
+        <div id="controls" class="mb-4">
+            <label for="level-select">Level: </label>
+            <select id="level-select" class="bg-orange-500 text-white rounded-lg p-2 mx-2 shadow-md hover:bg-orange-600 transition duration-200">
+                <option value="easy">Easy</option>
+                <option value="medium" selected>Medium</option> <option value="hard">Hard</option>
+            </select>
+            <button id="start-button" class="bg-green-500 text-white rounded-lg px-6 py-2 shadow-md hover:bg-green-600 transition duration-200 uppercase">Start Game</button>
+        </div>
+
+        <canvas id="game-canvas" width="600" height="400"></canvas>
+
+        <div id="message-box">
+            <p id="message-text"></p>
+            <button id="restart-button" class="mt-4 bg-blue-500 text-white rounded-lg px-4 py-1 shadow-md hover:bg-blue-600 transition duration-200 uppercase">Play Again</button>
+        </div>
+    </div>
+
+    <script>
+        // --- Get References to HTML Elements ---
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d'); // Canvas drawing context
+        const scoreDisplay = document.getElementById('score');
+        const timerDisplay = document.getElementById('timer');
+        const startButton = document.getElementById('start-button');
+        const levelSelect = document.getElementById('level-select');
+        const controlsDiv = document.getElementById('controls');
+        const infoBar = document.getElementById('info-bar');
+        const messageBox = document.getElementById('message-box');
+        const messageText = document.getElementById('message-text');
+        const restartButton = document.getElementById('restart-button');
+
+        // --- Game Configuration Constants ---
+        const GAME_TIME_LIMIT = 30; // Duration of the game in seconds
+        const ITEM_SIZE = 30; // Visual size and click target size for items
+
+        // Define the properties of each catchable item
+        const itemTypes = {
+            trout: { emoji: '🐟', points: 2, speedMultiplier: 1.0 },   // Trout: 2 points, normal speed
+            bass: { emoji: '🐠', points: 1, speedMultiplier: 1.2 },    // Bass: 1 point, slightly faster
+            pike: { emoji: '🐡', points: 3, speedMultiplier: 0.8 },    // Pike: 3 points, slightly slower
+            seaweed: { emoji: '🌿', points: -2, speedMultiplier: 0.5 } // Seaweed: -2 points, slow drift
+        };
+
+        // Define settings for each difficulty level
+        const levelConfig = {
+            easy: { itemCount: 8, baseSpeed: 1 },     // Easy: Fewer items, slower speed
+            medium: { itemCount: 12, baseSpeed: 1.5 }, // Medium: Moderate items and speed
+            hard: { itemCount: 16, baseSpeed: 2 }     // Hard: More items, faster speed
+        };
+
+        // --- Game State Variables ---
+        let score = 0;                      // Player's current score
+        let timeLeft = GAME_TIME_LIMIT;     // Time remaining in the current game
+        let gameLoopId = null;              // ID for the animation frame loop
+        let timerIntervalId = null;         // ID for the timer interval
+        let gameItems = [];                 // Array to hold all active items (fish, seaweed)
+        let isGameOver = true;              // Flag to track if the game is active or over
+        let currentLevel = 'medium';        // Current selected difficulty level
+
+        // --- Game Item Class Definition ---
+        class GameItem {
+            constructor(type, level) {
+                this.type = type; // 'trout', 'bass', 'pike', 'seaweed'
+                this.emoji = itemTypes[type].emoji;
+                this.points = itemTypes[type].points;
+                this.size = ITEM_SIZE;
+                // Start at a random position within the canvas boundaries
+                this.x = Math.random() * (canvas.width - this.size);
+                this.y = Math.random() * (canvas.height - this.size);
+
+                // Calculate initial velocity based on level and item type
+                const config = levelConfig[level];
+                const speedMultiplier = itemTypes[type].speedMultiplier;
+                const angle = Math.random() * Math.PI * 2; // Random direction in radians
+                this.vx = Math.cos(angle) * config.baseSpeed * speedMultiplier; // Horizontal velocity
+                this.vy = Math.sin(angle) * config.baseSpeed * speedMultiplier; // Vertical velocity
+            }
+
+            // Update the item's position and handle collisions with canvas walls
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+
+                // Bounce off vertical walls (left/right)
+                if (this.x <= 0 || this.x + this.size >= canvas.width) {
+                    this.vx *= -1; // Reverse horizontal direction
+                    // Nudge item back into bounds if it went slightly past
+                    this.x = Math.max(0, Math.min(this.x, canvas.width - this.size));
+                }
+                // Bounce off horizontal walls (top/bottom)
+                if (this.y <= 0 || this.y + this.size >= canvas.height) {
+                    this.vy *= -1; // Reverse vertical direction
+                    // Nudge item back into bounds
+                    this.y = Math.max(0, Math.min(this.y, canvas.height - this.size));
+                }
+            }
+
+            // Draw the item (emoji) onto the canvas
+            draw() {
+                // Set font size for the emoji
+                ctx.font = `${this.size}px Arial`; // Using Arial often helps render emojis consistently
+                 // Draw the emoji. Adjust Y position slightly for better visual centering.
+                ctx.fillText(this.emoji, this.x, this.y + this.size * 0.8);
+            }
+
+            // Check if a given coordinate (clickX, clickY) is within the item's bounds
+            isClicked(clickX, clickY) {
+                // Simple rectangular collision check
+                return clickX >= this.x &&
+                       clickX <= this.x + this.size &&
+                       clickY >= this.y && // Canvas Y coordinates start from the top
+                       clickY <= this.y + this.size;
+            }
+        }
+
+        // --- Core Game Functions ---
+
+        /**
+         * Initializes and starts a new game session.
+         */
+        function startGame() {
+            // Prevent starting if a game is already running
+            if (!isGameOver) return;
+
+            console.log("Starting game..."); // Debug log
+            isGameOver = false;
+            score = 0;
+            timeLeft = GAME_TIME_LIMIT;
+            currentLevel = levelSelect.value; // Get selected level
+            gameItems = []; // Clear previous items
+
+            // Update UI elements
+            scoreDisplay.textContent = score;
+            timerDisplay.textContent = timeLeft;
+            controlsDiv.style.display = 'none'; // Hide level select and start button
+            infoBar.style.display = 'flex';     // Ensure score/timer bar is visible
+            messageBox.style.display = 'none';  // Hide game over message
+
+            // Populate the game area with items based on the selected level
+            const config = levelConfig[currentLevel];
+            const types = Object.keys(itemTypes); // Get list of item types ('trout', 'bass', etc.)
+            for (let i = 0; i < config.itemCount; i++) {
+                // Cycle through item types to get a mix
+                const randomType = types[i % types.length];
+                gameItems.push(new GameItem(randomType, currentLevel));
+            }
+
+            // Start the game loop for animation and updates
+            if (gameLoopId) cancelAnimationFrame(gameLoopId); // Clear previous loop if any
+            gameLoopId = requestAnimationFrame(gameLoop);
+
+            // Start the countdown timer
+            if (timerIntervalId) clearInterval(timerIntervalId); // Clear previous timer
+            timerIntervalId = setInterval(updateTimer, 1000); // Update timer every second
+
+            // Add the click listener to the canvas for catching items
+            canvas.addEventListener('click', handleCanvasClick);
+        }
+
+        /**
+         * The main game loop, responsible for updating and drawing each frame.
+         */
+        function gameLoop() {
+            // Stop the loop if the game has ended
+            if (isGameOver) {
+                console.log("Game loop stopped."); // Debug log
+                cancelAnimationFrame(gameLoopId);
+                return;
+            }
+
+            // 1. Clear the entire canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 2. Update and draw each game item
+            gameItems.forEach(item => {
+                item.update(); // Calculate new position and handle bouncing
+                item.draw();   // Draw the item at its new position
+            });
+
+            // 3. Request the next animation frame to continue the loop
+            gameLoopId = requestAnimationFrame(gameLoop);
+        }
+
+        /**
+         * Decrements the timer and ends the game if time runs out.
+         */
+        function updateTimer() {
+            timeLeft--;
+            timerDisplay.textContent = timeLeft;
+            if (timeLeft <= 0) {
+                endGame(); // Time's up!
+            }
+        }
+
+        /**
+         * Handles click events on the canvas to check if an item was caught.
+         */
+        function handleCanvasClick(event) {
+            if (isGameOver) return; // Ignore clicks if game is over
+
+            // Get click coordinates relative to the canvas
+            const rect = canvas.getBoundingClientRect();
+            const clickX = event.clientX - rect.left;
+            const clickY = event.clientY - rect.top;
+
+            // Check if the click hit any item (iterate backwards for safe removal)
+            for (let i = gameItems.length - 1; i >= 0; i--) {
+                const item = gameItems[i];
+                if (item.isClicked(clickX, clickY)) {
+                    // Item caught!
+                    console.log(`Caught: ${item.type}, Points: ${item.points}`); // Debug log
+                    score += item.points; // Update score
+                    scoreDisplay.textContent = score; // Update score display
+                    gameItems.splice(i, 1); // Remove the caught item from the array
+
+                    // Add a new random item to replace the caught one, maintaining item count
+                    const types = Object.keys(itemTypes);
+                    const randomType = types[Math.floor(Math.random() * types.length)];
+                    gameItems.push(new GameItem(randomType, currentLevel));
+
+                    break; // Stop checking after catching one item per click
+                }
+            }
+        }
+
+        /**
+         * Ends the current game session and displays the final score.
+         */
+        function endGame() {
+            console.log("Ending game..."); // Debug log
+            isGameOver = true;
+            clearInterval(timerIntervalId); // Stop the timer interval
+            cancelAnimationFrame(gameLoopId); // Stop the animation loop
+            timerIntervalId = null;
+            gameLoopId = null;
+            canvas.removeEventListener('click', handleCanvasClick); // Stop listening for catches
+
+            // Display the game over message box with the final score
+            messageText.textContent = `Game Over! Final Score: ${score}`;
+            messageBox.style.display = 'block';
+            controlsDiv.style.display = 'block'; // Show controls again
+        }
+
+        /**
+         * Resets the game state to its initial values before starting a new game.
+         */
+        function resetGame() {
+            console.log("Resetting game..."); // Debug log
+            isGameOver = true;
+            score = 0;
+            timeLeft = GAME_TIME_LIMIT;
+            gameItems = []; // Clear items
+
+            // Reset UI elements
+            scoreDisplay.textContent = score;
+            timerDisplay.textContent = timeLeft;
+            controlsDiv.style.display = 'block'; // Show controls
+            infoBar.style.display = 'flex';     // Show info bar
+            messageBox.style.display = 'none';  // Hide message box
+            ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas visually
+
+            // Ensure intervals/loops are stopped if reset is called unexpectedly
+            if (timerIntervalId) clearInterval(timerIntervalId);
+            if (gameLoopId) cancelAnimationFrame(gameLoopId);
+            timerIntervalId = null;
+            gameLoopId = null;
+            canvas.removeEventListener('click', handleCanvasClick);
+        }
+
+        // --- Event Listeners Setup ---
+        startButton.addEventListener('click', startGame);
+        restartButton.addEventListener('click', () => {
+            resetGame(); // Reset the game state first
+            // startGame(); // Optionally start immediately after reset, or let user click Start again
+        });
+        // Update the currentLevel variable if the selection changes *before* starting
+        levelSelect.addEventListener('change', (e) => {
+            if (isGameOver) { // Only allow changing level when game is not running
+                currentLevel = e.target.value;
+                console.log("Level changed to:", currentLevel); // Debug log
+            }
+        });
+
+        // --- Initial Page Load Setup ---
+        window.onload = () => {
+            resetGame(); // Set the initial state when the page loads
+            console.log("Game initialized on page load."); // Debug log
+        };
+
+    </script>
+
+</body>
+</html>
